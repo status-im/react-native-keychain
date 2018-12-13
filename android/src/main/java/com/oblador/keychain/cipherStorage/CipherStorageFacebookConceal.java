@@ -10,6 +10,7 @@ import com.facebook.crypto.CryptoConfig;
 import com.facebook.crypto.Entity;
 import com.facebook.crypto.keychain.KeyChain;
 import com.facebook.react.bridge.ReactApplicationContext;
+import com.oblador.keychain.SecurityLevel;
 import com.oblador.keychain.exceptions.CryptoFailedException;
 
 import java.nio.charset.Charset;
@@ -35,7 +36,23 @@ public class CipherStorageFacebookConceal implements CipherStorage {
     }
 
     @Override
-    public EncryptionResult encrypt(@NonNull String service, @NonNull String username, @NonNull String password) throws CryptoFailedException {
+    public SecurityLevel securityLevel() {
+        return SecurityLevel.ANY;
+    }
+
+    @Override
+    public boolean supportsSecureHardware() {
+        return false;
+    }
+
+    @Override
+    public EncryptionResult encrypt(@NonNull String service, @NonNull String username, @NonNull String password, SecurityLevel level) throws CryptoFailedException {
+
+        if (!this.securityLevel().satisfiesSafetyThreshold(level)) {
+            // TODO: IGORM: refactor to another exception type!
+            throw new CryptoFailedException(String.format("Insufficient security level (wants %s; got %s)", level, this.securityLevel()));
+        }
+
         if (!crypto.isAvailable()) {
             throw new CryptoFailedException("Crypto is missing");
         }

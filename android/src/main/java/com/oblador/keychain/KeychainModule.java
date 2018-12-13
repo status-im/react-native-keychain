@@ -20,7 +20,6 @@ import com.oblador.keychain.cipherStorage.CipherStorageKeystoreAESCBC;
 import com.oblador.keychain.exceptions.CryptoFailedException;
 import com.oblador.keychain.exceptions.EmptyParameterException;
 import com.oblador.keychain.exceptions.KeyStoreAccessException;
-import com.oblador.keychain.DeviceAvailability;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -56,16 +55,35 @@ public class KeychainModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void setGenericPasswordForOptions(String service, String username, String password, Promise promise) {
+    public void getSecurityLevel(Promise promise) {
         try {
+            CipherStorage storage = getCipherStorageForCurrentAPILevel(SecurityLevel.ANY);
+            if (!storage.securityLevel().satisfiesSafetyThreshold(SecurityLevel.SECURE_SOFTWARE)) {
+                promise.resolve(SecurityLevel.ANY.name());
+            }
+
+            if (isSecureHardwareAvailable()) {
+                promise.resolve(SecurityLevel.SECURE_HARDWARE.name());
+            } else {
+                promise.resolve(SecurityLevel.SECURE_SOFTWARE.name());
+            }
+        } catch (CryptoFailedException e) {
+            promise.resolve(SecurityLevel.ANY.name());
+        }
+    }
+
+    @ReactMethod
+    public void setGenericPasswordForOptions(String service, String username, String password, String minimumSecurityLevel, Promise promise) {
+        try {
+            SecurityLevel level = SecurityLevel.valueOf(minimumSecurityLevel);
             if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
                 throw new EmptyParameterException("you passed empty or null username/password");
             }
             service = getDefaultServiceIfNull(service);
 
-            CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel();
+            CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel(level);
 
-            EncryptionResult result = currentCipherStorage.encrypt(service, username, password);
+            EncryptionResult result = currentCipherStorage.encrypt(service, username, password, level);
             prefsStorage.storeEncryptedEntry(service, result);
 
             promise.resolve(true);
@@ -83,7 +101,7 @@ public class KeychainModule extends ReactContextBaseJavaModule {
         try {
             service = getDefaultServiceIfNull(service);
 
-            CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel();
+            CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel(SecurityLevel.ANY);
 
             final DecryptionResult decryptionResult;
             ResultSet resultSet = prefsStorage.getEncryptedEntry(service);
@@ -103,7 +121,8 @@ public class KeychainModule extends ReactContextBaseJavaModule {
                 // decrypt using the older cipher storage
                 decryptionResult = oldCipherStorage.decrypt(service, resultSet.usernameBytes, resultSet.passwordBytes);
                 // encrypt using the current cipher storage
-                EncryptionResult encryptionResult = currentCipherStorage.encrypt(service, decryptionResult.username, decryptionResult.password);
+                // TODO: IGORM: fix this thing
+                EncryptionResult encryptionResult = currentCipherStorage.encrypt(service, decryptionResult.username, decryptionResult.password, SecurityLevel.ANY);
                 // store the encryption result
                 prefsStorage.storeEncryptedEntry(service, encryptionResult);
                 // clean up the old cipher storage
@@ -165,7 +184,7 @@ public class KeychainModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void setInternetCredentialsForServer(@NonNull String server, String username, String password, ReadableMap unusedOptions, Promise promise) {
-        setGenericPasswordForOptions(server, username, password, promise);
+        setGenericPasswordForOptions(server, username, password, minimumSecurityLevel, promise);
     }
 
     @ReactMethod
@@ -194,20 +213,24 @@ public class KeychainModule extends ReactContextBaseJavaModule {
     }
 
     // The "Current" CipherStorage is the cipherStorage with the highest API level that is lower than or equal to the current API level
-    private CipherStorage getCipherStorageForCurrentAPILevel() throws CryptoFailedException {
+    private CipherStorage getCipherStorageForCurrentAPILevel(SecurityLevel level) throws CryptoFailedException {
         int currentAPILevel = Build.VERSION.SDK_INT;
         CipherStorage currentCipherStorage = null;
         for (CipherStorage cipherStorage : cipherStorageMap.values()) {
             int cipherStorageAPILevel = cipherStorage.getMinSupportedApiLevel();
             // Is the cipherStorage supported on the current API level?
             boolean isSupported = (cipherStorageAPILevel <= currentAPILevel);
+            boolean guaranteesSecurityLevel = cipherStorage.securityLevel().satisfiesSafetyThreshold(level);
+            if (!isSupported || !guaranteesSecurityLevel) {
+                continue;
+            }
             // Is the API level better than the one we previously selected (if any)?
-            if (isSupported && (currentCipherStorage == null || cipherStorageAPILevel > currentCipherStorage.getMinSupportedApiLevel())) {
+            if (currentCipherStorage == null || cipherStorageAPILevel > currentCipherStorage.getMinSupportedApiLevel()) {
                 currentCipherStorage = cipherStorage;
             }
         }
         if (currentCipherStorage == null) {
-            throw new CryptoFailedException("Unsupported Android SDK " + Build.VERSION.SDK_INT);
+            throw new CryptoFailedException("Unsupported Android SDK or no storage providing enough guarantees" + Build.VERSION.SDK_INT);
         }
         return currentCipherStorage;
     }
@@ -219,6 +242,15 @@ public class KeychainModule extends ReactContextBaseJavaModule {
     private boolean isFingerprintAuthAvailable() {
         return DeviceAvailability.isFingerprintAuthAvailable(getReactApplicationContext());
     }
+
+    private boolean isSecureHardwareAvailable() {
+        try {
+            return getCipherStorageForCurrentAPILevel(SecurityLevel.ANY).supportsSecureHardware();
+        } catch (CryptoFailedException e) {
+            return false;
+        }
+    }
+
 
     @NonNull
     private String getDefaultServiceIfNull(String service) {
