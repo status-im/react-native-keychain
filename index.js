@@ -42,7 +42,7 @@ export const BIOMETRY_TYPE = {
 type SecMinimumLevel = 
   | 'ANY'
   | 'SECURE_SOFTWARE'
-  | 'TEE' ;
+  | 'SECURE_HARDWARE' ;
 
 type SecAccessible =
   | 'AccessibleWhenUnlocked'
