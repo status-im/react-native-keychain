@@ -56,24 +56,7 @@ public class KeychainModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void getSecurityLevel(Promise promise) {
-        promise.resolve(getSecurityLevelImpl().name());
-    }
-
-    private SecurityLevel getSecurityLevelImpl() {
-        try {
-            CipherStorage storage = getCipherStorageForCurrentAPILevel(SecurityLevel.ANY);
-            if (!storage.securityLevel().satisfiesSafetyThreshold(SecurityLevel.SECURE_SOFTWARE)) {
-                return SecurityLevel.ANY;
-            }
-
-            if (isSecureHardwareAvailable()) {
-                return SecurityLevel.SECURE_HARDWARE;
-            } else {
-                return SecurityLevel.SECURE_SOFTWARE;
-            }
-        } catch (CryptoFailedException e) {
-            return SecurityLevel.ANY;
-        }
+        promise.resolve(getSecurityLevel().name());
     }
 
     @ReactMethod
@@ -85,7 +68,8 @@ public class KeychainModule extends ReactContextBaseJavaModule {
             }
             service = getDefaultServiceIfNull(service);
 
-            CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel(level);
+            CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel();
+            validateCipherStorageSecurityLevel(currentCipherStorage, level);
 
             EncryptionResult result = currentCipherStorage.encrypt(service, username, password, level);
             prefsStorage.storeEncryptedEntry(service, result);
@@ -105,7 +89,7 @@ public class KeychainModule extends ReactContextBaseJavaModule {
         try {
             service = getDefaultServiceIfNull(service);
 
-            CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel(SecurityLevel.ANY);
+            CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel();
 
             final DecryptionResult decryptionResult;
             ResultSet resultSet = prefsStorage.getEncryptedEntry(service);
@@ -133,9 +117,9 @@ public class KeychainModule extends ReactContextBaseJavaModule {
                     prefsStorage.storeEncryptedEntry(service, encryptionResult);
                     // clean up the old cipher storage
                     oldCipherStorage.removeKey(service);
-              } catch (CryptoFailedException e) {
-                Log.e(KEYCHAIN_MODULE, "Migrating to a less safe storage is not allowed. Keeping the old one");
-              }
+                } catch (CryptoFailedException e) {
+                    Log.e(KEYCHAIN_MODULE, "Migrating to a less safe storage is not allowed. Keeping the old one");
+                }
             }
 
             WritableMap credentials = Arguments.createMap();
@@ -208,15 +192,14 @@ public class KeychainModule extends ReactContextBaseJavaModule {
     }
 
     // The "Current" CipherStorage is the cipherStorage with the highest API level that is lower than or equal to the current API level
-    private CipherStorage getCipherStorageForCurrentAPILevel(SecurityLevel level) throws CryptoFailedException {
+    private CipherStorage getCipherStorageForCurrentAPILevel() throws CryptoFailedException {
         int currentAPILevel = Build.VERSION.SDK_INT;
         CipherStorage currentCipherStorage = null;
         for (CipherStorage cipherStorage : cipherStorageMap.values()) {
             int cipherStorageAPILevel = cipherStorage.getMinSupportedApiLevel();
             // Is the cipherStorage supported on the current API level?
             boolean isSupported = (cipherStorageAPILevel <= currentAPILevel);
-            boolean guaranteesSecurityLevel = cipherStorage.securityLevel().satisfiesSafetyThreshold(level);
-            if (!isSupported || !guaranteesSecurityLevel) {
+            if (!isSupported) {
                 continue;
             }
             // Is the API level better than the one we previously selected (if any)?
@@ -225,10 +208,23 @@ public class KeychainModule extends ReactContextBaseJavaModule {
             }
         }
         if (currentCipherStorage == null) {
-            throw new CryptoFailedException("Unsupported Android SDK or no storage providing enough guarantees" + Build.VERSION.SDK_INT);
+            throw new CryptoFailedException("Unsupported Android SDK " + Build.VERSION.SDK_INT);
         }
         return currentCipherStorage;
     }
+
+    private void validateCipherStorageSecurityLevel(CipherStorage cipherStorage, SecurityLevel requiredLevel) throws CryptoFailedException {
+        if (cipherStorage.securityLevel().satisfiesSafetyThreshold(requiredLevel)) {
+            return;
+        }
+
+        throw new CryptoFailedException(
+                String.format(
+                    "Cipher Storage is too weak. Required security level is: %s, but only %s is provided",
+                    requiredLevel.name(),
+                    cipherStorage.securityLevel().name()));
+    }
+
 
     private CipherStorage getCipherStorageByName(String cipherStorageName) {
         return cipherStorageMap.get(cipherStorageName);
@@ -240,11 +236,29 @@ public class KeychainModule extends ReactContextBaseJavaModule {
 
     private boolean isSecureHardwareAvailable() {
         try {
-            return getCipherStorageForCurrentAPILevel(SecurityLevel.ANY).supportsSecureHardware();
+            return getCipherStorageForCurrentAPILevel().supportsSecureHardware();
         } catch (CryptoFailedException e) {
             return false;
         }
     }
+
+    private SecurityLevel getSecurityLevel() {
+        try {
+            CipherStorage storage = getCipherStorageForCurrentAPILevel();
+            if (!storage.securityLevel().satisfiesSafetyThreshold(SecurityLevel.SECURE_SOFTWARE)) {
+                return SecurityLevel.ANY;
+            }
+
+            if (isSecureHardwareAvailable()) {
+                return SecurityLevel.SECURE_HARDWARE;
+            } else {
+                return SecurityLevel.SECURE_SOFTWARE;
+            }
+        } catch (CryptoFailedException e) {
+            return SecurityLevel.ANY;
+        }
+    }
+
 
 
     @NonNull

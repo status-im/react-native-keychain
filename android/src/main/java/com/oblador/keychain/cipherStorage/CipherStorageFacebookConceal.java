@@ -49,7 +49,6 @@ public class CipherStorageFacebookConceal implements CipherStorage {
     public EncryptionResult encrypt(@NonNull String service, @NonNull String username, @NonNull String password, SecurityLevel level) throws CryptoFailedException {
 
         if (!this.securityLevel().satisfiesSafetyThreshold(level)) {
-            // TODO: IGORM: refactor to another exception type!
             throw new CryptoFailedException(String.format("Insufficient security level (wants %s; got %s)", level, this.securityLevel()));
         }
 
