@@ -56,19 +56,23 @@ public class KeychainModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void getSecurityLevel(Promise promise) {
+        promise.resolve(getSecurityLevelImpl().name());
+    }
+
+    private SecurityLevel getSecurityLevelImpl() {
         try {
             CipherStorage storage = getCipherStorageForCurrentAPILevel(SecurityLevel.ANY);
             if (!storage.securityLevel().satisfiesSafetyThreshold(SecurityLevel.SECURE_SOFTWARE)) {
-                promise.resolve(SecurityLevel.ANY.name());
+                return SecurityLevel.ANY;
             }
 
             if (isSecureHardwareAvailable()) {
-                promise.resolve(SecurityLevel.SECURE_HARDWARE.name());
+                return SecurityLevel.SECURE_HARDWARE;
             } else {
-                promise.resolve(SecurityLevel.SECURE_SOFTWARE.name());
+                return SecurityLevel.SECURE_SOFTWARE;
             }
         } catch (CryptoFailedException e) {
-            promise.resolve(SecurityLevel.ANY.name());
+            return SecurityLevel.ANY;
         }
     }
 
@@ -121,12 +125,17 @@ public class KeychainModule extends ReactContextBaseJavaModule {
                 // decrypt using the older cipher storage
                 decryptionResult = oldCipherStorage.decrypt(service, resultSet.usernameBytes, resultSet.passwordBytes);
                 // encrypt using the current cipher storage
-                // TODO: IGORM: fix this thing
-                EncryptionResult encryptionResult = currentCipherStorage.encrypt(service, decryptionResult.username, decryptionResult.password, SecurityLevel.ANY);
-                // store the encryption result
-                prefsStorage.storeEncryptedEntry(service, encryptionResult);
-                // clean up the old cipher storage
-                oldCipherStorage.removeKey(service);
+
+                try {
+                    // don't allow to degrade security level when transferring, the new storage should be as safe as the old one.
+                    EncryptionResult encryptionResult = currentCipherStorage.encrypt(service, decryptionResult.username, decryptionResult.password, decryptionResult.getSecurityLevel());
+                    // store the encryption result
+                    prefsStorage.storeEncryptedEntry(service, encryptionResult);
+                    // clean up the old cipher storage
+                    oldCipherStorage.removeKey(service);
+              } catch (CryptoFailedException e) {
+                Log.e(KEYCHAIN_MODULE, "Migrating to a less safe storage is not allowed. Keeping the old one");
+              }
             }
 
             WritableMap credentials = Arguments.createMap();

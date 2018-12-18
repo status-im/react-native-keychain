@@ -83,7 +83,8 @@ public class CipherStorageFacebookConceal implements CipherStorage {
 
             return new DecryptionResult(
                     new String(decryptedUsername, Charset.forName("UTF-8")),
-                    new String(decryptedPassword, Charset.forName("UTF-8")));
+                    new String(decryptedPassword, Charset.forName("UTF-8")),
+                    SecurityLevel.ANY);
         } catch (Exception e) {
             throw new CryptoFailedException("Decryption failed for service " + service, e);
         }

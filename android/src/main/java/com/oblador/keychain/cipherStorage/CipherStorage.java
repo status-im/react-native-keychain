@@ -27,9 +27,16 @@ public interface CipherStorage {
     }
 
     class DecryptionResult extends CipherResult<String> {
-        public DecryptionResult(String username, String password) {
+      private SecurityLevel securityLevel;
+
+      public DecryptionResult(String username, String password, SecurityLevel level) {
             super(username, password);
+            securityLevel = level;
         }
+
+      public SecurityLevel getSecurityLevel() {
+        return securityLevel;
+      }
     }
 
     EncryptionResult encrypt(@NonNull String service, @NonNull String username, @NonNull String password, SecurityLevel level) throws CryptoFailedException;
