@@ -72,7 +72,7 @@ public class CipherStorageKeystoreAESCBC implements CipherStorage {
         try {
             SecretKey key = tryGenerateRegularSecurityKey(testKeyAlias);
             return validateKeySecurityLevel(SecurityLevel.SECURE_HARDWARE, key);
-        } catch (NoSuchAlgorithmException|InvalidAlgorithmParameterException|NoSuchProviderException|InvalidKeySpecException e) {
+        } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException | NoSuchProviderException e) {
             return false;
         } finally {
             try {
@@ -122,18 +122,20 @@ public class CipherStorageKeystoreAESCBC implements CipherStorage {
     }
 
     @TargetApi(Build.VERSION_CODES.M)
-    private boolean validateKeySecurityLevel(SecurityLevel level, SecretKey generatedKey) throws NoSuchAlgorithmException,
-      NoSuchProviderException, InvalidKeySpecException {
-        SecretKeyFactory factory = SecretKeyFactory.getInstance(generatedKey.getAlgorithm(), KEYSTORE_TYPE);
-        KeyInfo keyInfo;
-        keyInfo = (KeyInfo) factory.getKeySpec(generatedKey, KeyInfo.class);
+    private boolean validateKeySecurityLevel(SecurityLevel level, SecretKey generatedKey) {
+        return getSecurityLevel(generatedKey).satisfiesSafetyThreshold(level);
+    }
 
-        if (level == SecurityLevel.SECURE_HARDWARE && !keyInfo.isInsideSecureHardware()) {
-            Log.w(TAG, "Could not create a key inside secure hardware (SECURE_HARDWARE), even though it is required");
-            return false;
+    @TargetApi(Build.VERSION_CODES.M)
+    private SecurityLevel getSecurityLevel(SecretKey key) {
+        try {
+            SecretKeyFactory factory = SecretKeyFactory.getInstance(key.getAlgorithm(), KEYSTORE_TYPE);
+            KeyInfo keyInfo;
+            keyInfo = (KeyInfo) factory.getKeySpec(key, KeyInfo.class);
+            return keyInfo.isInsideSecureHardware() ? SecurityLevel.SECURE_HARDWARE : SecurityLevel.SECURE_SOFTWARE;
+        } catch (NoSuchAlgorithmException | NoSuchProviderException | InvalidKeySpecException e) {
+            return SecurityLevel.ANY;
         }
-
-        return true;
     }
 
     @Override
@@ -148,7 +150,7 @@ public class CipherStorageKeystoreAESCBC implements CipherStorage {
             String decryptedUsername = decryptBytes(key, username);
             String decryptedPassword = decryptBytes(key, password);
 
-            return new DecryptionResult(decryptedUsername, decryptedPassword);
+            return new DecryptionResult(decryptedUsername, decryptedPassword, getSecurityLevel((SecretKey) key));
         } catch (KeyStoreException | UnrecoverableKeyException | NoSuchAlgorithmException e) {
             throw new CryptoFailedException("Could not get key from Keystore", e);
         } catch (KeyStoreAccessException e) {
