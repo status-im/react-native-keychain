@@ -101,7 +101,7 @@ public class CipherStorageKeystoreAESCBC implements CipherStorage {
                   secretKey = tryGenerateRegularSecurityKey(service);
               }
 
-              if(!validateKeySecurityLevel(level, secretKey)) {
+              if (!validateKeySecurityLevel(level, secretKey)) {
                   throw new CryptoFailedException("Cannot generate keys with required security guarantees");
               }
             }
