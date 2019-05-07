@@ -43,9 +43,7 @@ if (CMAKE_CROSSCOMPILING)
 endif()
 
 ExternalProject_Add(qtkeychain_ep
-  GIT_REPOSITORY https://github.com/status-im/qtkeychain.git
-  GIT_TAG d3c606c55adf8c2c2747556055652b3469f6c4c2
-  GIT_SHALLOW TRUE
+  URL $ENV{QTKEYCHAIN_SOURCES}
   CMAKE_ARGS ${qtkeychain_CMAKE_ARGS}
   CMAKE_CACHE_ARGS "-DBUILD_TRANSLATIONS:BOOL=OFF"
   BUILD_BYPRODUCTS ${qtkeychain_STATIC_LIB}
